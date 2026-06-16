@@ -10,8 +10,13 @@ body{background:#0a0a0a;overflow:hidden;font-family:'Georgia',serif;display:flex
 #game-container{position:relative;width:min(100vw,100vh);height:min(100vw,100vh);max-width:600px;max-height:600px;border-radius:12px;overflow:hidden;}
 
 /* ── SDÍLENÉ ── */
-.logo-badge{position:absolute;bottom:10px;right:10px;width:68px;height:68px;z-index:30;opacity:0.95;mix-blend-mode:screen;cursor:pointer;transition:transform 0.15s,opacity 0.15s;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.5));}
+.logo-badge{position:absolute;bottom:10px;right:10px;width:68px;height:68px;z-index:30;opacity:0.95;cursor:pointer;transition:transform 0.15s,opacity 0.15s;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.5));}
 .logo-badge:hover{transform:scale(1.08);opacity:1;}
+/* Ve hře — přesunuto do černého okraje vpravo od vozovky */
+/* Canvas=480px, vozovka končí na x=410, okraj=70px → right odpovídá (480-410)=70px od pravého okraje canvasu */
+#logo-game-wrap{position:absolute;bottom:48px;right:0;width:70px;display:flex;align-items:center;justify-content:center;z-index:30;}
+#logo-game-wrap img{width:60px;height:60px;opacity:0.95;cursor:pointer;transition:transform 0.15s,opacity 0.15s;}
+#logo-game-wrap img:hover{transform:scale(1.08);opacity:1;}
 
 /* ── INTRO ── */
 #screen-intro{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
@@ -109,7 +114,7 @@ canvas{display:block;width:100%;height:100%;}
   <!-- HRA -->
   <div id="screen-game">
     <div id="game-ui">
-      <div id="score-box">Skóre: <span id="score">0</span> &nbsp;|&nbsp; Nejlepší: <span id="best">0</span></div>
+      <div id="score-box">Čas: <span id="timer-display">0:00</span> &nbsp;|&nbsp; Nejlepší: <span id="best-time">–</span></div>
       <button id="back-btn" onclick="goToMenu()">&#8592; Menu</button>
     </div>
     <canvas id="c" width="480" height="600"></canvas>
@@ -122,9 +127,11 @@ canvas{display:block;width:100%;height:100%;}
     <div id="route-bar"><div id="route-fill" style="height:0%"></div></div>
     <div id="route-label-start">Prešov</div>
     <div id="route-label-end">&#127937; Praha</div>
-    <a href="https://www.youtube.com/@Eidamcz-p3d" target="_blank" style="position:absolute;bottom:10px;right:10px;z-index:30;">
-      <img class="logo-badge" id="logo-game" alt="EidamCZ">
-    </a>
+    <div id="logo-game-wrap">
+      <a href="https://www.youtube.com/@Eidamcz-p3d" target="_blank">
+        <img id="logo-game" alt="EidamCZ">
+      </a>
+    </div>
     <div id="game-msg"></div>
     <div id="hint">&#8592; &#8594; A D = zatáčení &nbsp;|&nbsp; &#8593; W = rychleji &nbsp;|&nbsp; Mezerník = start/pokračovat</div>
   </div>
@@ -152,7 +159,7 @@ document.getElementById('logo-intro').src = LOGO_SRC;
 document.getElementById('logo-game').src  = LOGO_SRC;
 
 // ── ŽEBŘÍČEK (localStorage) ─────────────────────────────
-const LB_KEY = 'moonomania_leaderboard';
+const LB_KEY = 'moonomania_leaderboard_v2';
 
 function loadLeaderboard(){
   try{ return JSON.parse(localStorage.getItem(LB_KEY)||'[]'); }
@@ -161,13 +168,15 @@ function loadLeaderboard(){
 function saveLeaderboard(lb){
   try{ localStorage.setItem(LB_KEY, JSON.stringify(lb)); } catch(e){}
 }
-function addToLeaderboard(name, score, crashes){
+function formatTime(secs){
+  const mm = Math.floor(secs/60);
+  const ss = String(Math.floor(secs%60)).padStart(2,'0');
+  return mm+'m '+ss+'s';
+}
+function addToLeaderboard(name, timeSecs, crashes){
   const lb = loadLeaderboard();
-  // Čas v sekundách od startu — přibližně score/60 snímků
-  lb.push({ name: name.trim()||'Anonym', score, crashes, date: new Date().toLocaleDateString('cs-CZ') });
-  // Seřadit: nejmenší skóre = nejrychlejší
-  lb.sort((a,b)=> a.score - b.score);
-  // Zachovat max 10
+  lb.push({ name: name.trim()||'Anonym', timeSecs, crashes, date: new Date().toLocaleDateString('cs-CZ') });
+  lb.sort((a,b)=> a.timeSecs - b.timeSecs);
   const top = lb.slice(0,10);
   saveLeaderboard(top);
   return top;
@@ -188,18 +197,15 @@ function renderLeaderboard(highlight){
     else if(i===1) li.className='second';
     else if(i===2) li.className='third';
     // zvýraznění nového záznamu
-    if(highlight && e.name===highlight.name && e.score===highlight.score)
+    if(highlight && e.name===highlight.name && e.timeSecs===highlight.timeSecs)
       li.style.background='rgba(200,160,42,0.18)';
     const rank = medals[i] || (i+1)+'.';
-    // Přibližný čas: score / 60 snímků = sekundy
-    const secs = Math.round(e.score/60);
-    const mm = Math.floor(secs/60), ss = secs%60;
-    const timeStr = mm+'m '+String(ss).padStart(2,'0')+'s';
+    const timeStr = formatTime(e.timeSecs);
     li.innerHTML =
       '<span class="lb-rank">'+rank+'</span>'+
       '<span class="lb-name">'+escHtml(e.name)+'</span>'+
-      '<span class="lb-score">'+e.score.toLocaleString()+' b</span>'+
-      '<span class="lb-time">⏱ '+timeStr+'</span>';
+      '<span class="lb-time">⏱ '+timeStr+'</span>'+
+      '<span class="lb-score" style="color:rgba(255,255,255,0.4);font-size:11px">'+e.date+'</span>';
     list.appendChild(li);
   });
 }
@@ -228,24 +234,22 @@ function goToMenu(){
 }
 
 // Win flow
-let winScore=0, winCrashes=0;
+let winScore=0, winCrashes=0, winTimeSecs=0;
 document.getElementById('win-submit').addEventListener('click',submitWin);
 document.getElementById('win-name-input').addEventListener('keydown',e=>{ if(e.key==='Enter') submitWin(); });
 
 function submitWin(){
   const name = document.getElementById('win-name-input').value.trim()||'Anonym';
-  const entry = { name, score: winScore };
-  addToLeaderboard(name, winScore, winCrashes);
+  const entry = { name, timeSecs: winTimeSecs };
+  addToLeaderboard(name, winTimeSecs, winCrashes);
   renderLeaderboard(entry);
   showScreen('screen-leaderboard');
 }
 
-function showWinScreen(sc, cr){
-  winScore = sc; winCrashes = cr;
-  const secs = Math.round(sc/60);
-  const mm = Math.floor(secs/60), ss = secs%60;
+function showWinScreen(sc, cr, ts){
+  winScore = sc; winCrashes = cr; winTimeSecs = ts;
   document.getElementById('win-score-display').textContent =
-    'Čas: '+mm+'m '+String(ss).padStart(2,'0')+'s  |  Skóre: '+sc.toLocaleString()+' b  |  Nárazy: '+cr;
+    'Čas: '+formatTime(ts)+'  ·  Nárazy: '+cr+'×';
   document.getElementById('win-name-input').value='';
   showScreen('screen-win');
   setTimeout(()=>document.getElementById('win-name-input').focus(), 150);
@@ -256,13 +260,13 @@ function showWinScreen(sc, cr){
 // ════════════════════════════════════════════════════
 const ROUTE=[
   {name:'Prešov',  emoji:'🏁', score:0},
-  {name:'Poprad',  emoji:'🏔️', score:1000},
-  {name:'Žilina',  emoji:'🏙️', score:3500},
-  {name:'Trenčín', emoji:'🏰', score:6000},
-  {name:'Brno',    emoji:'🍷', score:9000},
-  {name:'Praha',   emoji:'🏆', score:12000},
+  {name:'Poprad',  emoji:'🏔️', score:500},
+  {name:'Žilina',  emoji:'🏙️', score:1500},
+  {name:'Trenčín', emoji:'🏰', score:2800},
+  {name:'Brno',    emoji:'🍷', score:4200},
+  {name:'Praha',   emoji:'🏆', score:6000},
 ];
-const SCORE_GOAL=12000;
+const SCORE_GOAL=6000;
 let nextCityIdx=1;
 
 const announceEl=document.getElementById('city-announce');
@@ -302,6 +306,7 @@ const ALL_SLOTS=[
 ];
 
 let state='idle',score=0,best=0,speed=3,frame=0;
+let gameStartTime=0, bestTimeSecs=Infinity;
 let roadOffset=0,lineOffset=0;
 let cars=[],sparks=[],debris=[],skids=[],citySigns=[];
 let crashCount=0, speedPenalty=0;
@@ -327,11 +332,12 @@ function resumeOrStart(){
 
 function startGame(){
   state='play'; score=0; speed=3; frame=0; crashCount=0; speedPenalty=0;
+  gameStartTime = performance.now();
   Object.assign(player,{x:W/2,y:H-120,vx:0,angle:0,crashed:false});
   cars=[]; sparks=[]; debris=[]; skids=[]; citySigns=[];
   roadOffset=0; lineOffset=0; nextCityIdx=1; waveTimer=60;
   msgEl.textContent='';
-  document.getElementById('score').textContent=0;
+  document.getElementById('timer-display').textContent='0:00';
   updateRouteBar(0); announceEl.classList.remove('show');
   showCity(ROUTE[0],false);
   requestAnimationFrame(loop);
@@ -340,9 +346,33 @@ function startGame(){
 // ── Spawn vln ──────────────────────────────────────
 function spawnWave(){
   const carCount = speed>5 ? 4 : 3;
-  // Brána = 2 sousední volné sloty, vyber náhodně ze slotů 0-5
-  const gateStart = Math.floor(Math.random()*6);
-  const freeSlots = new Set([gateStart, gateStart+1]);
+
+  // Občas (30 % šance) pošli sólové auto přímo do středního pruhu (slot 3)
+  if(Math.random() < 0.30){
+    cars.push({
+      x:ALL_SLOTS[3], y:-80+(Math.random()-0.5)*30,
+      w:38,h:64,
+      color:NPC_COLORS[Math.floor(Math.random()*NPC_COLORS.length)],
+      spd:speed*(0.3+Math.random()*0.3),
+      crashed:false,angle:0,spinDir:0
+    });
+    return;
+  }
+
+  // Brána = 1 volný slot (ne vždy sousední), zajisti že střed (slot 3) je občas obsazen
+  const forceCenter = Math.random() < 0.40; // 40 % vln obsadí střed
+  let freeSlots;
+  if(forceCenter){
+    // Volný slot je náhodně vybrán z krajů (0,1,5,6), střed zůstane obsazený
+    const edgeSlots = [0,1,5,6];
+    const freeIdx = edgeSlots[Math.floor(Math.random()*edgeSlots.length)];
+    freeSlots = new Set([freeIdx]);
+  } else {
+    // Klasická brána = 2 sousední sloty, ale vyloučíme kombinace co vždy uvolní střed
+    const gateStart = Math.floor(Math.random()*6);
+    freeSlots = new Set([gateStart, gateStart+1]);
+  }
+
   let occupied=[];
   for(let i=0;i<7;i++) if(!freeSlots.has(i)) occupied.push(i);
   while(occupied.length>carCount) occupied.splice(Math.floor(Math.random()*occupied.length),1);
@@ -530,11 +560,16 @@ function loop(){
   for(const s of citySigns) s.y+=effectiveSpeed*1.1;
   for(const s of citySigns) drawCitySign(s);
   citySigns=citySigns.filter(s=>s.y<H+90);
+  // Update real-time timer display (always, even when crashed)
+  {
+    const elapsedSecs = (performance.now() - gameStartTime) / 1000;
+    const mm = Math.floor(elapsedSecs/60);
+    const ss = String(Math.floor(elapsedSecs%60)).padStart(2,'0');
+    document.getElementById('timer-display').textContent = mm+':'+ss;
+  }
   if(state==='play'){
     score++;
-    document.getElementById('score').textContent=score;
     updateRouteBar(score);
-    if(score>best){best=score;document.getElementById('best').textContent=best;}
     if(nextCityIdx<ROUTE.length&&score>=ROUTE[nextCityIdx].score){
       const city=ROUTE[nextCityIdx];
       const isGoal=city.name==='Praha';
@@ -543,7 +578,12 @@ function loop(){
       nextCityIdx++;
       if(isGoal){
         state='win';
-        setTimeout(()=>showWinScreen(score,crashCount), 2600);
+        const finalTimeSecs = (performance.now() - gameStartTime) / 1000;
+        if(finalTimeSecs < bestTimeSecs){
+          bestTimeSecs = finalTimeSecs;
+          document.getElementById('best-time').textContent = formatTime(finalTimeSecs);
+        }
+        setTimeout(()=>showWinScreen(score,crashCount,finalTimeSecs), 2600);
         return;
       }
     }
